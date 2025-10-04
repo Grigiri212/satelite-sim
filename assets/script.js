@@ -9,6 +9,10 @@ const packetLossEl = document.getElementById('packet-loss');
 const weatherStatusEl = document.getElementById('weather-status');
 const solarActivityEl = document.getElementById('solar-activity');
 const interferenceLevelEl = document.getElementById('interference-level');
+const powerLoadEl = document.getElementById('power-load');
+const temperatureEl = document.getElementById('temperature');
+const radiationEl = document.getElementById('radiation');
+const windEl = document.getElementById('wind');
 const azimuthSlider = document.getElementById('azimuth');
 const elevationSlider = document.getElementById('elevation');
 const azimuthValue = document.getElementById('azimuth-value');
@@ -17,8 +21,71 @@ const alignButton = document.getElementById('align-button');
 const scanButton = document.getElementById('scan-button');
 const autoButton = document.getElementById('auto-button');
 const drillButton = document.getElementById('drill-button');
+const scenarioGrid = document.getElementById('scenario-grid');
+const systemReadouts = document.getElementById('system-readouts');
+const alertFeed = document.getElementById('alert-feed');
 const radarCanvas = document.getElementById('radar-display');
 const ctx = radarCanvas.getContext('2d');
+
+const scenarioDefinitions = [
+    {
+        id: 'storm-front',
+        title: 'Штормовой фронт',
+        description: 'Имитация грозового фронта и резкого роста помех.'
+    },
+    {
+        id: 'solar-flare',
+        title: 'Солнечная вспышка',
+        description: 'Повышенная радиация и рост индукционных токов.'
+    },
+    {
+        id: 'backup-relay',
+        title: 'Резервный ретранслятор',
+        description: 'Включение резервного спутникового канала.'
+    },
+    {
+        id: 'spectrum-scan',
+        title: 'Скан спектра',
+        description: 'Быстрый анализ радиопомех по диапазонам.'
+    },
+    {
+        id: 'load-balance',
+        title: 'Балансировка трафика',
+        description: 'Перераспределение пропускной способности между абонентами.'
+    },
+    {
+        id: 'clock-resync',
+        title: 'Синхронизация часов',
+        description: 'Корректировка дрейфа опорного генератора станции.'
+    },
+    {
+        id: 'field-team',
+        title: 'Выездная бригада',
+        description: 'Отправка техников к антенной площадке.'
+    },
+    {
+        id: 'software-patch',
+        title: 'Обновление ПО',
+        description: 'Установка патча и переконфигурация контроллеров.'
+    },
+    {
+        id: 'thermal-control',
+        title: 'Термоконтроль',
+        description: 'Активное охлаждение и снижение температуры оборудования.'
+    },
+    {
+        id: 'fiber-cut',
+        title: 'Обрыв магистрали',
+        description: 'Учебный сценарий переключения при потере наземного канала.'
+    },
+    {
+        id: 'night-ops',
+        title: 'Ночной режим',
+        description: 'Снижение энергопотребления и перевод систем в ночную смену.'
+    }
+];
+
+const scenarioRefs = new Map();
 
 let state = {
     satellites: [],
@@ -33,8 +100,15 @@ let state = {
         solarActivity: '—',
         interference: 0,
         latency: 0,
-        packetLoss: 0
-    }
+        packetLoss: 0,
+        powerLoad: 0,
+        temperature: 0,
+        radiation: 0,
+        wind: 0
+    },
+    systems: {},
+    alerts: [],
+    scenarioStates: {}
 };
 
 let scanInterval = null;
@@ -68,6 +142,25 @@ function setTarget(satelliteId) {
         method: 'POST',
         body: formData
     }).then(() => fetchStatus());
+}
+
+function runScenario(id, button) {
+    if (!button) return;
+    const defaultLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Выполнение...';
+    const formData = new FormData();
+    formData.append('scenario', id);
+    fetch('api.php?action=run-scenario', {
+        method: 'POST',
+        body: formData
+    })
+        .then(res => res.json())
+        .then(() => fetchStatus())
+        .finally(() => {
+            button.disabled = false;
+            button.textContent = defaultLabel;
+        });
 }
 
 function renderSatellites() {
@@ -191,16 +284,6 @@ function renderRadar() {
     });
 }
 
-function render() {
-    renderSatellites();
-    renderClients();
-    renderLog();
-    renderMetrics();
-    renderControls();
-    renderRadar();
-    renderEnvironment();
-}
-
 function renderEnvironment() {
     const env = state.environment || {};
     weatherStatusEl.textContent = `Погода: ${env.weather ?? '—'}`;
@@ -211,6 +294,108 @@ function renderEnvironment() {
     } else {
         interferenceLevelEl.textContent = 'Помехи: —';
     }
+    if (powerLoadEl) {
+        powerLoadEl.textContent = `Энергопотребление: ${env.powerLoad ?? '—'}%`;
+    }
+    if (temperatureEl) {
+        temperatureEl.textContent = `Температура: ${typeof env.temperature === 'number' ? `${env.temperature}°C` : '—'}`;
+    }
+    if (radiationEl) {
+        radiationEl.textContent = `Радиация: ${env.radiation ?? '—'} мкЗв`;
+    }
+    if (windEl) {
+        windEl.textContent = `Ветер: ${env.wind ?? '—'} м/с`;
+    }
+}
+
+function formatSystemValue(key, value) {
+    if (typeof value === 'undefined' || value === null || value === '') {
+        return '—';
+    }
+    if (key === 'backupRelayActive') {
+        return value ? 'Активен' : 'Не активен';
+    }
+    if (key === 'clockOffset') {
+        return `${value.toFixed ? value.toFixed(2) : value} мкс`;
+    }
+    if (key === 'nightShift') {
+        return value ? 'Включен' : 'Выключен';
+    }
+    return value;
+}
+
+function renderSystems() {
+    if (!systemReadouts) return;
+    systemReadouts.innerHTML = '';
+    const systems = state.systems || {};
+    const labels = {
+        backupRelayActive: 'Резервный ретранслятор',
+        spectrumStatus: 'Сканер спектра',
+        loadProfile: 'Профиль нагрузки',
+        clockOffset: 'Смещение часов',
+        fieldTeam: 'Выездная бригада',
+        softwareVersion: 'Версия ПО',
+        thermalMode: 'Терморежим',
+        lastCalibration: 'Последняя калибровка',
+        redundantChannel: 'Резервный канал',
+        nightShift: 'Ночной режим'
+    };
+    Object.entries(labels).forEach(([key, label]) => {
+        const value = systems[key];
+        const li = document.createElement('li');
+        li.innerHTML = `
+            <span>${label}</span>
+            <span class="value">${formatSystemValue(key, value)}</span>
+        `;
+        systemReadouts.appendChild(li);
+    });
+}
+
+function renderAlerts() {
+    if (!alertFeed) return;
+    alertFeed.innerHTML = '';
+    const alerts = state.alerts || [];
+    alerts.slice().reverse().forEach(alert => {
+        const li = document.createElement('li');
+        li.className = `alert ${alert.severity ?? 'info'}`;
+        li.innerHTML = `
+            <span class="alert-time">${alert.time ?? ''}</span>
+            <span class="alert-message">${alert.message}</span>
+        `;
+        alertFeed.appendChild(li);
+    });
+}
+
+function formatTimeLabel(timestamp) {
+    if (!timestamp) {
+        return '';
+    }
+    return ` · ${timestamp}`;
+}
+
+function renderScenarioStates() {
+    scenarioRefs.forEach((ref, id) => {
+        if (!ref.statusEl) return;
+        const info = (state.scenarioStates || {})[id];
+        if (!info) {
+            ref.statusEl.textContent = 'Не запускалась';
+            return;
+        }
+        ref.statusEl.textContent = `${info.summary}${formatTimeLabel(info.timestamp)}`;
+    });
+}
+
+function render() {
+    renderSatellites();
+    renderClients();
+    renderLog();
+    renderMetrics();
+    renderControls();
+    renderRadar();
+    renderEnvironment();
+    renderSystems();
+    renderAlerts();
+    renderScenarioStates();
 }
 
 function smoothAlign(target) {
@@ -236,6 +421,30 @@ function smoothAlign(target) {
     }
 
     step();
+}
+
+function initScenarioGrid() {
+    if (!scenarioGrid) return;
+    scenarioGrid.innerHTML = '';
+    scenarioDefinitions.forEach(def => {
+        const card = document.createElement('article');
+        card.className = 'scenario-card';
+        card.innerHTML = `
+            <div class="scenario-header">
+                <h3>${def.title}</h3>
+                <p>${def.description}</p>
+            </div>
+            <div class="scenario-footer">
+                <span class="scenario-status" data-scenario="${def.id}">Не запускалась</span>
+                <button class="scenario-button" data-scenario="${def.id}">Смоделировать</button>
+            </div>
+        `;
+        scenarioGrid.appendChild(card);
+        const button = card.querySelector('button');
+        const statusEl = card.querySelector('.scenario-status');
+        button.addEventListener('click', () => runScenario(def.id, button));
+        scenarioRefs.set(def.id, { card, statusEl, button });
+    });
 }
 
 alignButton.addEventListener('click', () => {
@@ -311,5 +520,6 @@ elevationSlider.addEventListener('input', () => {
     setOrientation(parseFloat(azimuthSlider.value), el);
 });
 
+initScenarioGrid();
 setInterval(fetchStatus, 2500);
 fetchStatus();
