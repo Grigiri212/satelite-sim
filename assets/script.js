@@ -26,6 +26,7 @@ const systemReadouts = document.getElementById('system-readouts');
 const alertFeed = document.getElementById('alert-feed');
 const radarCanvas = document.getElementById('radar-display');
 const ctx = radarCanvas.getContext('2d');
+const spaceView = document.getElementById('space-view');
 
 const scenarioDefinitions = [
     {
@@ -112,6 +113,310 @@ let state = {
 };
 
 let scanInterval = null;
+
+const spaceState = {
+    initialized: false,
+    renderer: null,
+    scene: null,
+    camera: null,
+    root: null,
+    satellitesGroup: null,
+    linesGroup: null,
+    groundPosition: null,
+    satelliteMeshes: new Map(),
+    lineSegments: new Map(),
+    pointer: { active: false, x: 0, y: 0, target: null },
+    autoRotate: true
+};
+
+const EARTH_RADIUS = 10;
+const ORBIT_RADIUS = 16;
+const GROUND_COORDS = { lat: 55.75, lon: 37.61 };
+
+function degToRad(value) {
+    return (value * Math.PI) / 180;
+}
+
+function positionOnSphere(latDeg, lonDeg, radius) {
+    const lat = degToRad(latDeg);
+    const lon = degToRad(lonDeg);
+    const x = radius * Math.cos(lat) * Math.cos(lon);
+    const y = radius * Math.sin(lat);
+    const z = radius * Math.cos(lat) * Math.sin(lon);
+    return new THREE.Vector3(x, y, z);
+}
+
+function positionFromLongitude(lonDeg, radius) {
+    const lon = degToRad(lonDeg);
+    const x = radius * Math.cos(lon);
+    const z = radius * Math.sin(lon);
+    return new THREE.Vector3(x, 0, z);
+}
+
+function initSpaceVisualization() {
+    if (spaceState.initialized || !spaceView || typeof THREE === 'undefined') {
+        return;
+    }
+
+    const width = spaceView.clientWidth || spaceView.offsetWidth;
+    const height = spaceView.clientHeight || 340;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setSize(width, height, false);
+    renderer.setClearColor(0x000000, 0);
+    spaceView.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x040b16, 0.035);
+
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    camera.position.set(24, 14, 24);
+
+    const root = new THREE.Group();
+    scene.add(root);
+
+    const ambient = new THREE.AmbientLight(0xbfd4ff, 0.7);
+    scene.add(ambient);
+
+    const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+    directional.position.set(18, 22, 14);
+    scene.add(directional);
+
+    const earthMaterial = new THREE.MeshPhongMaterial({
+        color: 0x10335a,
+        emissive: 0x04111f,
+        shininess: 40,
+        transparent: true,
+        opacity: 0.95
+    });
+    const earth = new THREE.Mesh(new THREE.SphereGeometry(EARTH_RADIUS, 48, 48), earthMaterial);
+    root.add(earth);
+
+    const atmosphere = new THREE.Mesh(
+        new THREE.SphereGeometry(EARTH_RADIUS + 0.2, 32, 32),
+        new THREE.MeshBasicMaterial({
+            color: 0x5bc0be,
+            transparent: true,
+            opacity: 0.08,
+            blending: THREE.AdditiveBlending
+        })
+    );
+    root.add(atmosphere);
+
+    const orbitMaterial = new THREE.MeshBasicMaterial({
+        color: 0x54a7ff,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide
+    });
+    const orbit = new THREE.Mesh(new THREE.RingGeometry(ORBIT_RADIUS - 0.1, ORBIT_RADIUS + 0.1, 128), orbitMaterial);
+    orbit.rotation.x = Math.PI / 2;
+    root.add(orbit);
+
+    const orbitGlow = new THREE.Mesh(
+        new THREE.RingGeometry(ORBIT_RADIUS - 0.4, ORBIT_RADIUS + 0.4, 128),
+        new THREE.MeshBasicMaterial({
+            color: 0x16c0a0,
+            transparent: true,
+            opacity: 0.08,
+            side: THREE.DoubleSide
+        })
+    );
+    orbitGlow.rotation.x = Math.PI / 2;
+    root.add(orbitGlow);
+
+    const starsGeometry = new THREE.BufferGeometry();
+    const starVertices = [];
+    for (let i = 0; i < 600; i++) {
+        const radius = 80;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const theta = 2 * Math.PI * Math.random();
+        starVertices.push(
+            radius * Math.sin(phi) * Math.cos(theta),
+            radius * Math.cos(phi),
+            radius * Math.sin(phi) * Math.sin(theta)
+        );
+    }
+    starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+    const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.35, transparent: true, opacity: 0.6 });
+    const stars = new THREE.Points(starsGeometry, starsMaterial);
+    scene.add(stars);
+
+    const satellitesGroup = new THREE.Group();
+    const linesGroup = new THREE.Group();
+    root.add(satellitesGroup);
+    root.add(linesGroup);
+
+    const groundPosition = positionOnSphere(GROUND_COORDS.lat, GROUND_COORDS.lon, EARTH_RADIUS + 0.1);
+    const groundMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.35, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0xffc857, emissive: 0x593500, emissiveIntensity: 0.8 })
+    );
+    groundMarker.position.copy(groundPosition);
+    satellitesGroup.add(groundMarker);
+
+    const pointerDown = event => {
+        event.preventDefault();
+        spaceState.pointer.active = true;
+        spaceState.pointer.x = event.clientX;
+        spaceState.pointer.y = event.clientY;
+        spaceState.pointer.target = event.target;
+        spaceState.autoRotate = false;
+        if (spaceState.pointer.target && spaceState.pointer.target.setPointerCapture) {
+            spaceState.pointer.target.setPointerCapture(event.pointerId);
+        }
+    };
+
+    const pointerMove = event => {
+        if (!spaceState.pointer.active) return;
+        const deltaX = event.clientX - spaceState.pointer.x;
+        const deltaY = event.clientY - spaceState.pointer.y;
+        spaceState.pointer.x = event.clientX;
+        spaceState.pointer.y = event.clientY;
+        root.rotation.y += deltaX * 0.005;
+        const newRotationX = root.rotation.x + deltaY * 0.003;
+        root.rotation.x = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, newRotationX));
+    };
+
+    const pointerUp = event => {
+        spaceState.pointer.active = false;
+        spaceState.autoRotate = true;
+        if (spaceState.pointer.target && spaceState.pointer.target.releasePointerCapture) {
+            spaceState.pointer.target.releasePointerCapture(event.pointerId);
+        }
+        spaceState.pointer.target = null;
+    };
+
+    renderer.domElement.addEventListener('pointerdown', pointerDown);
+    renderer.domElement.addEventListener('pointermove', pointerMove);
+    renderer.domElement.addEventListener('pointerup', pointerUp);
+    renderer.domElement.addEventListener('pointerleave', () => {
+        spaceState.pointer.active = false;
+        spaceState.autoRotate = true;
+    });
+    window.addEventListener('pointerup', pointerUp);
+
+    const resizeObserver = () => {
+        if (!spaceState.initialized) return;
+        const newWidth = spaceView.clientWidth || spaceView.offsetWidth;
+        const newHeight = spaceView.clientHeight || 340;
+        camera.aspect = newWidth / newHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(newWidth, newHeight, false);
+    };
+
+    window.addEventListener('resize', resizeObserver);
+    resizeObserver();
+
+    const animate = () => {
+        requestAnimationFrame(animate);
+        if (spaceState.autoRotate) {
+            root.rotation.y += 0.0008;
+        }
+        earth.rotation.y += 0.0015;
+        atmosphere.rotation.y += 0.0015;
+        stars.rotation.y -= 0.0004;
+        renderer.render(scene, camera);
+    };
+    animate();
+
+    spaceState.initialized = true;
+    spaceState.renderer = renderer;
+    spaceState.scene = scene;
+    spaceState.camera = camera;
+    spaceState.root = root;
+    spaceState.satellitesGroup = satellitesGroup;
+    spaceState.linesGroup = linesGroup;
+    spaceState.groundPosition = groundPosition;
+    spaceState.satelliteMeshes = new Map();
+    spaceState.lineSegments = new Map();
+};
+
+function updateSpaceVisualization() {
+    if (!spaceView || typeof THREE === 'undefined') {
+        return;
+    }
+
+    if (!spaceState.initialized) {
+        initSpaceVisualization();
+    }
+
+    if (!spaceState.initialized) {
+        return;
+    }
+
+    const activeIds = new Set();
+
+    state.satellites.forEach(sat => {
+        activeIds.add(sat.id);
+        let mesh = spaceState.satelliteMeshes.get(sat.id);
+        if (!mesh) {
+            const material = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                emissive: 0x0c1a27,
+                emissiveIntensity: 0.5,
+                metalness: 0.2,
+                roughness: 0.35
+            });
+            mesh = new THREE.Mesh(new THREE.SphereGeometry(0.45, 20, 20), material);
+            spaceState.satellitesGroup.add(mesh);
+            spaceState.satelliteMeshes.set(sat.id, mesh);
+        }
+
+        const position = positionFromLongitude(sat.longitude, ORBIT_RADIUS);
+        mesh.position.copy(position);
+
+        const isActive = sat.id === state.targetSatellite;
+        mesh.material.color.set(isActive ? 0x16c0a0 : 0xffffff);
+        mesh.material.emissiveIntensity = isActive ? 0.9 : 0.4;
+        mesh.scale.setScalar(isActive ? 1.4 : 1);
+
+        let line = spaceState.lineSegments.get(sat.id);
+        if (!line) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3));
+            const material = new THREE.LineBasicMaterial({
+                color: isActive ? 0x16c0a0 : 0x4a6cff,
+                transparent: true,
+                opacity: isActive ? 0.95 : 0.45
+            });
+            line = new THREE.Line(geometry, material);
+            spaceState.linesGroup.add(line);
+            spaceState.lineSegments.set(sat.id, line);
+        }
+
+        const attribute = line.geometry.getAttribute('position');
+        const array = attribute.array;
+        array[0] = spaceState.groundPosition.x;
+        array[1] = spaceState.groundPosition.y;
+        array[2] = spaceState.groundPosition.z;
+        array[3] = position.x;
+        array[4] = position.y;
+        array[5] = position.z;
+        attribute.needsUpdate = true;
+        line.material.color.set(isActive ? 0x16c0a0 : 0x4a6cff);
+        line.material.opacity = isActive ? 0.95 : 0.4;
+    });
+
+    spaceState.satelliteMeshes.forEach((mesh, id) => {
+        if (!activeIds.has(id)) {
+            spaceState.satellitesGroup.remove(mesh);
+            mesh.geometry.dispose();
+            mesh.material.dispose();
+            spaceState.satelliteMeshes.delete(id);
+        }
+    });
+
+    spaceState.lineSegments.forEach((line, id) => {
+        if (!activeIds.has(id)) {
+            spaceState.linesGroup.remove(line);
+            line.geometry.dispose();
+            line.material.dispose();
+            spaceState.lineSegments.delete(id);
+        }
+    });
+}
 
 function fetchStatus() {
     return fetch('api.php?action=status')
@@ -392,6 +697,7 @@ function render() {
     renderMetrics();
     renderControls();
     renderRadar();
+    updateSpaceVisualization();
     renderEnvironment();
     renderSystems();
     renderAlerts();
