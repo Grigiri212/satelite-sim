@@ -45,6 +45,10 @@ if (!isset($_SESSION['state_initialized'])) {
                     <span id="weather-status">—</span>
                     <span id="solar-activity">—</span>
                     <span id="interference-level">—</span>
+                    <span id="power-load">—</span>
+                    <span id="temperature">—</span>
+                    <span id="radiation">—</span>
+                    <span id="wind">—</span>
                 </span>
             </div>
         </div>
@@ -91,6 +95,19 @@ if (!isset($_SESSION['state_initialized'])) {
             </div>
             <div class="radar">
                 <canvas id="radar-display" width="360" height="360"></canvas>
+            </div>
+        </section>
+        <section class="panel operations">
+            <h2>Сценарии и симуляции</h2>
+            <p class="panel-description">Запускайте тренировочные сценарии и отслеживайте состояние вспомогательных систем станции.</p>
+            <div id="scenario-grid" class="scenario-grid"></div>
+            <div class="systems-block">
+                <h3>Состояние систем</h3>
+                <ul id="system-readouts" class="system-list"></ul>
+            </div>
+            <div class="alerts-block">
+                <h3>Оповещения</h3>
+                <ul id="alert-feed" class="alert-feed"></ul>
             </div>
         </section>
         <section class="panel clients">
