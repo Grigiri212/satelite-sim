@@ -27,6 +27,25 @@ const alertFeed = document.getElementById('alert-feed');
 const radarCanvas = document.getElementById('radar-display');
 const ctx = radarCanvas.getContext('2d');
 const spaceView = document.getElementById('space-view');
+const dcGridLoadEl = document.getElementById('dc-grid-load');
+const dcUpsChargeEl = document.getElementById('dc-ups-charge');
+const dcPduLoadEl = document.getElementById('dc-pdu-load');
+const dcGeneratorEl = document.getElementById('dc-generator-state');
+const dcCoolingPowerEl = document.getElementById('dc-cooling-power');
+const dcSupplyTempEl = document.getElementById('dc-supply-temp');
+const dcReturnTempEl = document.getElementById('dc-return-temp');
+const dcHumidityEl = document.getElementById('dc-humidity');
+const dcAirflowEl = document.getElementById('dc-airflow');
+const dcFreeCoolingEl = document.getElementById('dc-free-cooling');
+const dcCoolingStatusEl = document.getElementById('dc-cooling-status');
+const dcAutomationStatusEl = document.getElementById('dc-automation-status');
+const dcClusterList = document.getElementById('dc-cluster-list');
+const dcRackList = document.getElementById('dc-rack-list');
+const dcTicketList = document.getElementById('dc-ticket-list');
+const dcMaintenanceWindowEl = document.getElementById('dc-maintenance-window');
+const dcLastDrillEl = document.getElementById('dc-last-drill');
+const dcAlarmsList = document.getElementById('dc-alarms');
+const dcControlButtons = document.querySelectorAll('[data-dc-action]');
 
 const scenarioDefinitions = [
     {
@@ -109,7 +128,15 @@ let state = {
     },
     systems: {},
     alerts: [],
-    scenarioStates: {}
+    scenarioStates: {},
+    datacenter: {
+        power: {},
+        cooling: {},
+        virtualization: { clusters: [] },
+        racks: [],
+        operations: { tickets: [] },
+        alarms: []
+    }
 };
 
 let scanInterval = null;
@@ -671,6 +698,161 @@ function renderAlerts() {
     });
 }
 
+function formatPercentValue(value) {
+    return typeof value === 'number' && !Number.isNaN(value) ? `${Math.round(value)}%` : '—';
+}
+
+function formatTemperatureValue(value) {
+    return typeof value === 'number' && !Number.isNaN(value) ? `${value.toFixed(1)}°C` : '—';
+}
+
+function renderDataCenter() {
+    const dc = state.datacenter || {};
+    const power = dc.power || {};
+    const cooling = dc.cooling || {};
+    const virtualization = dc.virtualization || {};
+    const operations = dc.operations || {};
+
+    if (dcGridLoadEl) dcGridLoadEl.textContent = formatPercentValue(power.gridLoad);
+    if (dcUpsChargeEl) dcUpsChargeEl.textContent = formatPercentValue(power.upsCharge);
+    if (dcPduLoadEl) dcPduLoadEl.textContent = formatPercentValue(power.pduLoad);
+    if (dcGeneratorEl) dcGeneratorEl.textContent = power.generatorState || '—';
+    if (dcCoolingPowerEl) dcCoolingPowerEl.textContent = formatPercentValue(power.coolingPower);
+
+    if (dcSupplyTempEl) dcSupplyTempEl.textContent = formatTemperatureValue(cooling.supplyTemp);
+    if (dcReturnTempEl) dcReturnTempEl.textContent = formatTemperatureValue(cooling.returnTemp);
+    if (dcHumidityEl) dcHumidityEl.textContent = formatPercentValue(cooling.humidity);
+    if (dcAirflowEl) dcAirflowEl.textContent = formatPercentValue(cooling.airflow);
+    if (dcFreeCoolingEl) {
+        if (typeof cooling.freeCooling === 'boolean') {
+            dcFreeCoolingEl.textContent = cooling.freeCooling ? 'Включено' : 'Выключено';
+        } else {
+            dcFreeCoolingEl.textContent = '—';
+        }
+    }
+    if (dcCoolingStatusEl) dcCoolingStatusEl.textContent = cooling.status || '—';
+
+    if (dcAutomationStatusEl) {
+        dcAutomationStatusEl.textContent = virtualization.automation || '—';
+    }
+
+    if (dcClusterList) {
+        dcClusterList.innerHTML = '';
+        const clusters = Array.isArray(virtualization.clusters) ? virtualization.clusters : [];
+        if (clusters.length === 0) {
+            const placeholder = document.createElement('p');
+            placeholder.className = 'empty-state';
+            placeholder.textContent = 'Нет активных кластеров.';
+            dcClusterList.appendChild(placeholder);
+        } else {
+            clusters.forEach(cluster => {
+                const card = document.createElement('article');
+                card.className = 'cluster-card';
+                card.innerHTML = `
+                    <div class="cluster-header">
+                        <strong>${cluster.name}</strong>
+                        <span class="cluster-status">${cluster.status || '—'}</span>
+                    </div>
+                    <div class="cluster-metric">
+                        <span>CPU</span>
+                        <div class="progress-bar"><span style="width:${Math.round(cluster.cpu ?? 0)}%"></span></div>
+                        <span>${formatPercentValue(cluster.cpu)}</span>
+                    </div>
+                    <div class="cluster-metric">
+                        <span>RAM</span>
+                        <div class="progress-bar"><span style="width:${Math.round(cluster.memory ?? 0)}%"></span></div>
+                        <span>${formatPercentValue(cluster.memory)}</span>
+                    </div>
+                    <div class="cluster-metric">
+                        <span>Storage</span>
+                        <div class="progress-bar"><span style="width:${Math.round(cluster.storage ?? 0)}%"></span></div>
+                        <span>${formatPercentValue(cluster.storage)}</span>
+                    </div>
+                `;
+                dcClusterList.appendChild(card);
+            });
+        }
+    }
+
+    if (dcRackList) {
+        dcRackList.innerHTML = '';
+        const racks = Array.isArray(dc.racks) ? dc.racks : [];
+        if (racks.length === 0) {
+            const placeholder = document.createElement('p');
+            placeholder.className = 'empty-state';
+            placeholder.textContent = 'Данные по стойкам отсутствуют.';
+            dcRackList.appendChild(placeholder);
+        } else {
+            racks.forEach(rack => {
+                const card = document.createElement('article');
+                card.className = 'rack-card';
+                card.innerHTML = `
+                    <header>
+                        <strong>${rack.label}</strong>
+                        <span>${rack.powerFeed || '—'}</span>
+                    </header>
+                    <div class="rack-metric">
+                        <span>Нагрузка</span>
+                        <div class="progress-bar"><span style="width:${Math.round(rack.load ?? 0)}%"></span></div>
+                        <span>${formatPercentValue(rack.load)}</span>
+                    </div>
+                    <div class="rack-meta">
+                        <span>Температура: ${formatTemperatureValue(rack.thermal)}</span>
+                        <span class="rack-status">${rack.status || '—'}</span>
+                    </div>
+                `;
+                dcRackList.appendChild(card);
+            });
+        }
+    }
+
+    if (dcTicketList) {
+        dcTicketList.innerHTML = '';
+        const tickets = Array.isArray(operations.tickets) ? operations.tickets : [];
+        if (tickets.length === 0) {
+            const li = document.createElement('li');
+            li.className = 'empty';
+            li.textContent = 'Активных задач нет.';
+            dcTicketList.appendChild(li);
+        } else {
+            tickets.forEach(ticket => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <span class="ticket-id">${ticket.id}</span>
+                    <span class="ticket-title">${ticket.title}</span>
+                    <span class="ticket-status">${ticket.status}</span>
+                `;
+                dcTicketList.appendChild(li);
+            });
+        }
+    }
+
+    if (dcMaintenanceWindowEl) {
+        dcMaintenanceWindowEl.textContent = operations.maintenanceWindow || '—';
+    }
+    if (dcLastDrillEl) {
+        dcLastDrillEl.textContent = operations.lastDrill || '—';
+    }
+
+    if (dcAlarmsList) {
+        dcAlarmsList.innerHTML = '';
+        const alarms = Array.isArray(dc.alarms) ? dc.alarms : [];
+        if (!alarms.length) {
+            const li = document.createElement('li');
+            li.className = 'alert empty';
+            li.textContent = 'Нет активных предупреждений.';
+            dcAlarmsList.appendChild(li);
+        } else {
+            alarms.forEach(message => {
+                const li = document.createElement('li');
+                li.className = 'alert warning';
+                li.textContent = message;
+                dcAlarmsList.appendChild(li);
+            });
+        }
+    }
+}
+
 function formatTimeLabel(timestamp) {
     if (!timestamp) {
         return '';
@@ -690,6 +872,25 @@ function renderScenarioStates() {
     });
 }
 
+function triggerDatacenterAction(action, button) {
+    if (!action || !button) return;
+    const defaultLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Выполняется...';
+    const formData = new FormData();
+    formData.append('operation', action);
+    fetch('api.php?action=datacenter-action', {
+        method: 'POST',
+        body: formData
+    })
+        .then(res => res.json())
+        .then(() => fetchStatus())
+        .finally(() => {
+            button.disabled = false;
+            button.textContent = defaultLabel;
+        });
+}
+
 function render() {
     renderSatellites();
     renderClients();
@@ -700,6 +901,7 @@ function render() {
     updateSpaceVisualization();
     renderEnvironment();
     renderSystems();
+    renderDataCenter();
     renderAlerts();
     renderScenarioStates();
 }
@@ -752,6 +954,13 @@ function initScenarioGrid() {
         scenarioRefs.set(def.id, { card, statusEl, button });
     });
 }
+
+dcControlButtons.forEach(button => {
+    button.addEventListener('click', () => {
+        const action = button.dataset.dcAction;
+        triggerDatacenterAction(action, button);
+    });
+});
 
 alignButton.addEventListener('click', () => {
     if (!state.targetSatellite) return;
