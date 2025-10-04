@@ -31,6 +31,22 @@ if (!isset($_SESSION['state_initialized'])) {
                 <span class="metric-label">Скорость канала:</span>
                 <span id="link-speed" class="metric-value">0 Мбит/с</span>
             </div>
+            <div class="metric">
+                <span class="metric-label">Задержка:</span>
+                <span id="latency" class="metric-value">—</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Потери пакетов:</span>
+                <span id="packet-loss" class="metric-value">—</span>
+            </div>
+            <div class="metric wide">
+                <span class="metric-label">Окружающая среда:</span>
+                <span class="metric-value environment">
+                    <span id="weather-status">—</span>
+                    <span id="solar-activity">—</span>
+                    <span id="interference-level">—</span>
+                </span>
+            </div>
         </div>
     </header>
     <main class="layout">
@@ -70,6 +86,8 @@ if (!isset($_SESSION['state_initialized'])) {
                 </div>
                 <button id="align-button" class="primary">Синхронизировать</button>
                 <button id="scan-button" class="secondary">Быстрый скан</button>
+                <button id="auto-button" class="accent">Автонаведение</button>
+                <button id="drill-button" class="ghost">Учебная тревога</button>
             </div>
             <div class="radar">
                 <canvas id="radar-display" width="360" height="360"></canvas>

@@ -4,12 +4,19 @@ const eventLog = document.getElementById('event-log');
 const activeSatelliteEl = document.getElementById('active-satellite');
 const signalLevelEl = document.getElementById('signal-level');
 const linkSpeedEl = document.getElementById('link-speed');
+const latencyEl = document.getElementById('latency');
+const packetLossEl = document.getElementById('packet-loss');
+const weatherStatusEl = document.getElementById('weather-status');
+const solarActivityEl = document.getElementById('solar-activity');
+const interferenceLevelEl = document.getElementById('interference-level');
 const azimuthSlider = document.getElementById('azimuth');
 const elevationSlider = document.getElementById('elevation');
 const azimuthValue = document.getElementById('azimuth-value');
 const elevationValue = document.getElementById('elevation-value');
 const alignButton = document.getElementById('align-button');
 const scanButton = document.getElementById('scan-button');
+const autoButton = document.getElementById('auto-button');
+const drillButton = document.getElementById('drill-button');
 const radarCanvas = document.getElementById('radar-display');
 const ctx = radarCanvas.getContext('2d');
 
@@ -20,8 +27,17 @@ let state = {
     orientation: { azimuth: 180, elevation: 45 },
     signal: { quality: 0, speed: 0 },
     events: [],
-    linkLocked: false
+    linkLocked: false,
+    environment: {
+        weather: '—',
+        solarActivity: '—',
+        interference: 0,
+        latency: 0,
+        packetLoss: 0
+    }
 };
+
+let scanInterval = null;
 
 function fetchStatus() {
     return fetch('api.php?action=status')
@@ -113,6 +129,14 @@ function renderMetrics() {
     linkSpeedEl.textContent = `${state.signal.speed} Мбит/с`;
     signalLevelEl.classList.toggle('locked', state.linkLocked);
     linkSpeedEl.classList.toggle('locked', state.linkLocked);
+    const latency = state.environment && typeof state.environment.latency !== 'undefined'
+        ? state.environment.latency
+        : null;
+    const packetLoss = state.environment && typeof state.environment.packetLoss !== 'undefined'
+        ? state.environment.packetLoss
+        : null;
+    latencyEl.textContent = latency === null ? '—' : `${latency} мс`;
+    packetLossEl.textContent = packetLoss === null ? '—' : `${Number(packetLoss).toFixed(1)}%`;
 }
 
 function renderControls() {
@@ -174,6 +198,19 @@ function render() {
     renderMetrics();
     renderControls();
     renderRadar();
+    renderEnvironment();
+}
+
+function renderEnvironment() {
+    const env = state.environment || {};
+    weatherStatusEl.textContent = `Погода: ${env.weather ?? '—'}`;
+    solarActivityEl.textContent = `Солнце: ${env.solarActivity ?? '—'}`;
+    const interferenceValue = env.interference;
+    if (typeof interferenceValue === 'number') {
+        interferenceLevelEl.textContent = `Помехи: ${interferenceValue} dB`;
+    } else {
+        interferenceLevelEl.textContent = 'Помехи: —';
+    }
 }
 
 function smoothAlign(target) {
@@ -209,8 +246,11 @@ alignButton.addEventListener('click', () => {
 });
 
 scanButton.addEventListener('click', () => {
-    let az = 0;
-    const interval = setInterval(() => {
+    if (scanInterval) {
+        clearInterval(scanInterval);
+    }
+    let az = parseFloat(azimuthSlider.value);
+    scanInterval = setInterval(() => {
         az = (az + 10) % 360;
         const el = 25 + 20 * Math.sin(az * Math.PI / 180);
         azimuthSlider.value = az;
@@ -219,9 +259,44 @@ scanButton.addEventListener('click', () => {
         elevationValue.textContent = `${Math.round(el)}°`;
         setOrientation(az, el);
         if (state.signal.quality > 70 && state.targetSatellite) {
-            clearInterval(interval);
+            clearInterval(scanInterval);
+            scanInterval = null;
         }
     }, 200);
+});
+
+autoButton.addEventListener('click', () => {
+    if (autoButton.disabled) return;
+    if (scanInterval) {
+        clearInterval(scanInterval);
+        scanInterval = null;
+    }
+    autoButton.disabled = true;
+    const defaultLabel = autoButton.textContent;
+    autoButton.textContent = 'Расчет...';
+    fetch('api.php?action=auto-optimize', { method: 'POST' })
+        .then(() => fetchStatus())
+        .finally(() => {
+            autoButton.disabled = false;
+            autoButton.textContent = defaultLabel;
+        });
+});
+
+drillButton.addEventListener('click', () => {
+    if (drillButton.disabled) return;
+    if (scanInterval) {
+        clearInterval(scanInterval);
+        scanInterval = null;
+    }
+    drillButton.disabled = true;
+    const defaultLabel = drillButton.textContent;
+    drillButton.textContent = 'Сценарий...';
+    fetch('api.php?action=run-drill', { method: 'POST' })
+        .then(() => fetchStatus())
+        .finally(() => {
+            drillButton.disabled = false;
+            drillButton.textContent = defaultLabel;
+        });
 });
 
 azimuthSlider.addEventListener('input', () => {
