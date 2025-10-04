@@ -97,6 +97,25 @@ if (!isset($_SESSION['state_initialized'])) {
                 <canvas id="radar-display" width="360" height="360"></canvas>
             </div>
         </section>
+        <section class="panel visualization">
+            <h2>3D-обзор орбит</h2>
+            <p class="panel-description">Наглядное отображение положения спутников, линий видимости и текущей цели станции.</p>
+            <div id="space-view" class="space-view"></div>
+            <div class="view-legend">
+                <div class="legend-item">
+                    <span class="legend-color legend-satellite"></span>
+                    <span>Спутники на геостационарной орбите</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color legend-line"></span>
+                    <span>Линии видимости станции</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color legend-target"></span>
+                    <span>Активный спутник и закреплённый канал</span>
+                </div>
+            </div>
+        </section>
         <section class="panel operations">
             <h2>Сценарии и симуляции</h2>
             <p class="panel-description">Запускайте тренировочные сценарии и отслеживайте состояние вспомогательных систем станции.</p>
@@ -120,6 +139,7 @@ if (!isset($_SESSION['state_initialized'])) {
             </div>
         </section>
     </main>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
     <script src="assets/script.js"></script>
 </body>
 </html>
