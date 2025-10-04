@@ -129,6 +129,65 @@ if (!isset($_SESSION['state_initialized'])) {
                 <ul id="alert-feed" class="alert-feed"></ul>
             </div>
         </section>
+        <section class="panel datacenter">
+            <h2>Центр обработки данных</h2>
+            <p class="panel-description">Контроль инфраструктуры, обеспечивающей спутниковый шлюз: питание, охлаждение, виртуальные кластеры и заявки техников.</p>
+            <div class="datacenter-grid">
+                <article class="datacenter-card">
+                    <h3>Электропитание</h3>
+                    <ul class="datacenter-metrics">
+                        <li><span>Нагрузка на сеть</span><strong id="dc-grid-load">—</strong></li>
+                        <li><span>Заряд ИБП</span><strong id="dc-ups-charge">—</strong></li>
+                        <li><span>Нагрузка PDU</span><strong id="dc-pdu-load">—</strong></li>
+                        <li><span>Генераторы</span><strong id="dc-generator-state">—</strong></li>
+                        <li><span>Питание охлаждения</span><strong id="dc-cooling-power">—</strong></li>
+                    </ul>
+                </article>
+                <article class="datacenter-card">
+                    <h3>Охлаждение</h3>
+                    <ul class="datacenter-metrics">
+                        <li><span>Подача</span><strong id="dc-supply-temp">—</strong></li>
+                        <li><span>Обратка</span><strong id="dc-return-temp">—</strong></li>
+                        <li><span>Влажность</span><strong id="dc-humidity">—</strong></li>
+                        <li><span>Поток воздуха</span><strong id="dc-airflow">—</strong></li>
+                        <li><span>Свободное охлаждение</span><strong id="dc-free-cooling">—</strong></li>
+                        <li><span>Статус</span><strong id="dc-cooling-status">—</strong></li>
+                    </ul>
+                </article>
+                <article class="datacenter-card">
+                    <h3>Виртуальные кластеры</h3>
+                    <p id="dc-automation-status" class="datacenter-subtitle">—</p>
+                    <div id="dc-cluster-list" class="cluster-list"></div>
+                </article>
+            </div>
+            <div class="datacenter-controls">
+                <h3>Управление</h3>
+                <div class="control-grid">
+                    <button class="dc-action primary" data-dc-action="balance-vms">Балансировка VM</button>
+                    <button class="dc-action secondary" data-dc-action="boost-cooling">Усилить охлаждение</button>
+                    <button class="dc-action accent" data-dc-action="test-generators">Тест генераторов</button>
+                    <button class="dc-action ghost" data-dc-action="ack-alarms">Сбросить предупреждения</button>
+                </div>
+            </div>
+            <div class="datacenter-lists">
+                <div class="rack-block">
+                    <h3>Стойки и питание</h3>
+                    <div id="dc-rack-list" class="rack-list"></div>
+                </div>
+                <div class="tickets-block">
+                    <h3>Задачи обслуживания</h3>
+                    <ul id="dc-ticket-list" class="ticket-list"></ul>
+                    <div class="maintenance-meta">
+                        <span>Окно обслуживания: <strong id="dc-maintenance-window">—</strong></span>
+                        <span>Последние учения: <strong id="dc-last-drill">—</strong></span>
+                    </div>
+                </div>
+                <div class="alerts-block dc-alerts">
+                    <h3>Предупреждения ЦОДа</h3>
+                    <ul id="dc-alarms" class="alert-feed"></ul>
+                </div>
+            </div>
+        </section>
         <section class="panel clients">
             <h2>Наземная сеть</h2>
             <p class="panel-description">Мониторинг распределения потока данных по абонентам.</p>

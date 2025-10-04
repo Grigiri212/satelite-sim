@@ -40,6 +40,107 @@ function environmentDefaults(): array {
     ];
 }
 
+function datacenterDefaults(): array {
+    return [
+        'lastUpdate' => microtime(true),
+        'power' => [
+            'gridLoad' => 62,
+            'upsCharge' => 96,
+            'pduLoad' => 58,
+            'coolingPower' => 39,
+            'generatorState' => 'Готов'
+        ],
+        'cooling' => [
+            'supplyTemp' => 23.5,
+            'returnTemp' => 30.2,
+            'humidity' => 46,
+            'airflow' => 68,
+            'freeCooling' => true,
+            'status' => 'Норма'
+        ],
+        'virtualization' => [
+            'automation' => 'Автопилот распределения включен',
+            'clusters' => [
+                [
+                    'id' => 'alpha',
+                    'name' => 'Кластер «Alpha»',
+                    'cpu' => 68,
+                    'memory' => 72,
+                    'storage' => 61,
+                    'status' => 'Норма'
+                ],
+                [
+                    'id' => 'beta',
+                    'name' => 'Кластер «Beta»',
+                    'cpu' => 54,
+                    'memory' => 59,
+                    'storage' => 48,
+                    'status' => 'Норма'
+                ],
+                [
+                    'id' => 'gamma',
+                    'name' => 'Кластер «Gamma»',
+                    'cpu' => 73,
+                    'memory' => 67,
+                    'storage' => 58,
+                    'status' => 'Норма'
+                ]
+            ]
+        ],
+        'racks' => [
+            [
+                'id' => 'A1',
+                'label' => 'Стойка A1',
+                'load' => 65,
+                'thermal' => 27.4,
+                'status' => 'Норма',
+                'powerFeed' => 'PDU-1'
+            ],
+            [
+                'id' => 'A2',
+                'label' => 'Стойка A2',
+                'load' => 58,
+                'thermal' => 26.1,
+                'status' => 'Норма',
+                'powerFeed' => 'PDU-1'
+            ],
+            [
+                'id' => 'B1',
+                'label' => 'Стойка B1',
+                'load' => 71,
+                'thermal' => 28.3,
+                'status' => 'Норма',
+                'powerFeed' => 'PDU-2'
+            ],
+            [
+                'id' => 'B2',
+                'label' => 'Стойка B2',
+                'load' => 63,
+                'thermal' => 29.0,
+                'status' => 'Норма',
+                'powerFeed' => 'PDU-2'
+            ]
+        ],
+        'operations' => [
+            'maintenanceWindow' => '02:00–04:00',
+            'lastDrill' => '12 часов назад',
+            'tickets' => [
+                [
+                    'id' => 'INC-342',
+                    'title' => 'Датчик температуры в стойке B2',
+                    'status' => 'В работе'
+                ],
+                [
+                    'id' => 'CHG-128',
+                    'title' => 'Апгрейд гипервизора кластера «Gamma»',
+                    'status' => 'Ожидает'
+                ]
+            ]
+        ],
+        'alarms' => []
+    ];
+}
+
 function baseState(): array {
     $satellites = [
         [
@@ -100,6 +201,9 @@ function baseState(): array {
     $eventLog = [[
         'timestamp' => date('H:i:s'),
         'message' => 'Станция в режиме ожидания. Выберите спутник для связи.'
+    ], [
+        'timestamp' => date('H:i:s'),
+        'message' => 'Датацентр работает в штатном режиме, все кластеры синхронизированы.'
     ]];
 
     return [
@@ -116,7 +220,8 @@ function baseState(): array {
         'environment' => environmentDefaults(),
         'systems' => systemsDefaults(),
         'alerts' => [],
-        'scenarioStates' => []
+        'scenarioStates' => [],
+        'datacenter' => datacenterDefaults()
     ];
 }
 
@@ -139,6 +244,163 @@ if (!isset($state['scenarioStates'])) {
 }
 
 $state['environment'] = array_merge(environmentDefaults(), $state['environment'] ?? []);
+
+if (!isset($state['datacenter']) || !is_array($state['datacenter'])) {
+    $state['datacenter'] = datacenterDefaults();
+} else {
+    $state['datacenter'] = array_replace_recursive(datacenterDefaults(), $state['datacenter']);
+}
+
+function clampValue(float $value, float $min, float $max): float
+{
+    return max($min, min($max, $value));
+}
+
+function updateDataCenter(array &$state): void
+{
+    if (!isset($state['datacenter']) || !is_array($state['datacenter'])) {
+        $state['datacenter'] = datacenterDefaults();
+    }
+
+    $dc = $state['datacenter'];
+    $now = microtime(true);
+    if (($now - ($dc['lastUpdate'] ?? 0)) < 2) {
+        return;
+    }
+
+    $dc['power']['gridLoad'] = clampValue($dc['power']['gridLoad'] + mt_rand(-2, 3), 42, 94);
+    $dc['power']['pduLoad'] = clampValue($dc['power']['pduLoad'] + mt_rand(-3, 3), 35, 92);
+    $dc['power']['coolingPower'] = clampValue($dc['power']['coolingPower'] + mt_rand(-2, 2), 20, 70);
+    $dc['power']['upsCharge'] = clampValue($dc['power']['upsCharge'] + mt_rand(-1, 1) / 2, 38, 100);
+
+    if ($dc['power']['gridLoad'] > 88 && $dc['power']['generatorState'] === 'Готов') {
+        $dc['power']['generatorState'] = 'Режим ожидания';
+    } elseif ($dc['power']['gridLoad'] < 75 && $dc['power']['generatorState'] === 'Режим ожидания') {
+        $dc['power']['generatorState'] = 'Готов';
+    } elseif ($dc['power']['generatorState'] === 'Тестируется' && $dc['power']['upsCharge'] > 80) {
+        $dc['power']['generatorState'] = 'Готов';
+    }
+
+    $dc['cooling']['supplyTemp'] = clampValue($dc['cooling']['supplyTemp'] + mt_rand(-2, 2) / 10, 18, 29);
+    $dc['cooling']['returnTemp'] = clampValue($dc['cooling']['returnTemp'] + mt_rand(-3, 3) / 10, 24, 36);
+    $dc['cooling']['humidity'] = clampValue($dc['cooling']['humidity'] + mt_rand(-2, 2), 32, 62);
+    $dc['cooling']['airflow'] = clampValue($dc['cooling']['airflow'] + mt_rand(-3, 4), 40, 95);
+
+    if ($dc['cooling']['supplyTemp'] > 26) {
+        $dc['cooling']['status'] = 'Перегрев';
+    } elseif ($dc['cooling']['supplyTemp'] < 20) {
+        $dc['cooling']['status'] = 'Пониженная температура';
+    } elseif ($dc['cooling']['status'] !== 'Охлаждение усилено') {
+        $dc['cooling']['status'] = 'Норма';
+    }
+
+    if ($dc['virtualization']['automation'] === 'Балансировка выполнена') {
+        $dc['virtualization']['automation'] = 'Автопилот распределения включен';
+    }
+
+    foreach ($dc['virtualization']['clusters'] as &$cluster) {
+        $cluster['cpu'] = clampValue($cluster['cpu'] + mt_rand(-4, 4), 28, 94);
+        $cluster['memory'] = clampValue($cluster['memory'] + mt_rand(-3, 4), 30, 96);
+        $cluster['storage'] = clampValue($cluster['storage'] + mt_rand(-2, 3), 22, 90);
+
+        if ($cluster['cpu'] > 82 || $cluster['memory'] > 84) {
+            $cluster['status'] = 'Напряжение';
+        } elseif ($cluster['cpu'] < 45 && $cluster['memory'] < 48) {
+            $cluster['status'] = 'Резерв';
+        } elseif ($cluster['status'] !== 'Балансировка') {
+            $cluster['status'] = 'Норма';
+        }
+    }
+    unset($cluster);
+
+    foreach ($dc['racks'] as &$rack) {
+        $rack['load'] = clampValue($rack['load'] + mt_rand(-4, 5), 28, 96);
+        $rack['thermal'] = clampValue($rack['thermal'] + mt_rand(-2, 3) / 10, 22, 35);
+        if ($rack['thermal'] >= 32) {
+            $rack['status'] = 'Повышена температура';
+        } elseif ($rack['load'] >= 85) {
+            $rack['status'] = 'Высокая нагрузка';
+        } else {
+            $rack['status'] = 'Норма';
+        }
+    }
+    unset($rack);
+
+    if (isset($dc['operations']['tickets']) && is_array($dc['operations']['tickets'])) {
+        foreach ($dc['operations']['tickets'] as &$ticket) {
+            if ($ticket['status'] === 'В работе' && mt_rand(0, 100) > 92) {
+                $ticket['status'] = 'Завершено';
+            } elseif ($ticket['status'] === 'Ожидает' && mt_rand(0, 100) > 88) {
+                $ticket['status'] = 'В работе';
+            }
+        }
+        unset($ticket);
+    }
+
+    $alarms = [];
+    if ($dc['power']['gridLoad'] > 88) {
+        $alarms[] = 'Сеть на пределе — подготовьте генераторы.';
+    }
+    if ($dc['cooling']['status'] === 'Перегрев') {
+        $alarms[] = 'Температура подачи растет, усилите охлаждение.';
+    }
+    foreach ($dc['racks'] as $rackInfo) {
+        if ($rackInfo['thermal'] >= 32) {
+            $alarms[] = 'Стойка ' . $rackInfo['label'] . ': температура ' . round($rackInfo['thermal'], 1) . '°C';
+        }
+    }
+    if ($dc['cooling']['humidity'] > 58) {
+        $alarms[] = 'Повышенная влажность в машинном зале.';
+    }
+
+    $dc['alarms'] = array_slice(array_unique($alarms), 0, 5);
+    $dc['lastUpdate'] = $now;
+    $state['datacenter'] = $dc;
+}
+
+function runDatacenterOperation(array &$state, string $operation): array
+{
+    if (!isset($state['datacenter']) || !is_array($state['datacenter'])) {
+        $state['datacenter'] = datacenterDefaults();
+    }
+
+    $dc =& $state['datacenter'];
+
+    switch ($operation) {
+        case 'balance-vms':
+            foreach ($dc['virtualization']['clusters'] as &$cluster) {
+                $cluster['cpu'] = clampValue($cluster['cpu'] - mt_rand(6, 12), 20, 92);
+                $cluster['memory'] = clampValue($cluster['memory'] - mt_rand(4, 9), 20, 92);
+                $cluster['status'] = 'Балансировка';
+            }
+            unset($cluster);
+            $dc['virtualization']['automation'] = 'Балансировка выполнена';
+            logEvent($state, 'Датацентр: выполнена балансировка виртуальных машин.');
+            return ['success' => true, 'message' => 'Нагрузка кластеров перераспределена.'];
+        case 'boost-cooling':
+            $dc['cooling']['supplyTemp'] = clampValue($dc['cooling']['supplyTemp'] - 1.8, 16, 29);
+            $dc['cooling']['returnTemp'] = clampValue($dc['cooling']['returnTemp'] - 1.2, 22, 34);
+            $dc['cooling']['airflow'] = clampValue($dc['cooling']['airflow'] + 6, 40, 100);
+            $dc['cooling']['freeCooling'] = true;
+            $dc['cooling']['status'] = 'Охлаждение усилено';
+            logEvent($state, 'Датацентр: усилено охлаждение серверных залов.');
+            pushAlert($state, 'info', 'Система охлаждения ЦОДа увеличивает поток воздуха.');
+            return ['success' => true, 'message' => 'Охлаждение усилено.'];
+        case 'test-generators':
+            $dc['power']['generatorState'] = 'Тестируется';
+            $dc['power']['upsCharge'] = clampValue($dc['power']['upsCharge'] - 4, 35, 100);
+            $dc['operations']['lastDrill'] = 'Только что';
+            logEvent($state, 'Датацентр: проведена проверка дизель-генераторов.');
+            pushAlert($state, 'warning', 'Идёт тестирование дизель-генераторов ЦОДа.');
+            return ['success' => true, 'message' => 'Тестирование генераторов запущено.'];
+        case 'ack-alarms':
+            $dc['alarms'] = [];
+            logEvent($state, 'Датацентр: предупреждения подтверждены оператором.');
+            return ['success' => true, 'message' => 'Предупреждения сброшены.'];
+        default:
+            return ['success' => false, 'message' => 'Неизвестная операция'];
+    }
+}
 
 $action = $_GET['action'] ?? 'status';
 
@@ -566,6 +828,7 @@ function runScenario(array &$state, string $scenario): array {
 switch ($action) {
     case 'status':
         updateEnvironment($state);
+        updateDataCenter($state);
         $targetSat = $state['targetSatellite'] ? findSatellite($state, $state['targetSatellite']) : null;
         $signal = $targetSat ? calculateSignal($state['orientation'], $targetSat) : ['quality' => 0, 'speed' => 0];
         $signal = applyEnvironmentEffects($signal, $state['environment']);
@@ -593,7 +856,8 @@ switch ($action) {
             ],
             'systems' => $state['systems'],
             'alerts' => $state['alerts'],
-            'scenarioStates' => $state['scenarioStates']
+            'scenarioStates' => $state['scenarioStates'],
+            'datacenter' => $state['datacenter']
         ]);
     case 'set-orientation':
         $az = isset($_POST['azimuth']) ? (float) $_POST['azimuth'] : $state['orientation']['azimuth'];
@@ -657,6 +921,12 @@ switch ($action) {
     case 'run-scenario':
         $scenario = $_POST['scenario'] ?? '';
         $result = runScenario($state, $scenario);
+        $_SESSION['sim_state'] = $state;
+        response($result);
+    case 'datacenter-action':
+        $operation = $_POST['operation'] ?? '';
+        $result = runDatacenterOperation($state, $operation);
+        updateDataCenter($state);
         $_SESSION['sim_state'] = $state;
         response($result);
     case 'reset':
